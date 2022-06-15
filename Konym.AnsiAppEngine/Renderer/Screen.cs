@@ -165,6 +165,27 @@ public class Screen
 		ScreenBuffer[BufferIndex] = (byte) Character;
 	}
 
+	public void CopyToBuffer2D(int CellIndex, int LineWidth, byte[] ToCopy)
+	{
+		int StartIndex = CellIndex * 14;
+		int WindowWidthBytes = WindowWidth * 14;
+
+		int CurrentWidth = 0;
+		int CurrentLine = 0;
+
+		for (int i = 0; i < ToCopy.Length; i++)
+		{
+			ScreenBuffer[StartIndex + (WindowWidthBytes * CurrentLine) + CurrentWidth] = ToCopy[i];
+			CurrentWidth++;
+
+			if (CurrentWidth == LineWidth * 14)
+			{
+				CurrentWidth = 0;
+				CurrentLine++;
+			}
+		}
+	}
+
 	public void ClearBuffer()
 	{
 		// Clear screen buffer byte-for-byte to clear leftover color data
