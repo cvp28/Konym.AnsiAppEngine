@@ -2,37 +2,73 @@
 
 using Konym.AnsiAppEngine;
 
-Console.ReadKey(true);
+bool UseKernel32;
+
+prompt:
+
+Console.Write("Use Kernel32 Console API? (y/n): ");
+var cki = Console.ReadKey(false);
+Console.WriteLine();
+
+if (cki.Key == ConsoleKey.Y)
+	UseKernel32 = true;
+else if (cki.Key == ConsoleKey.N)
+	UseKernel32 = false;
+else
+	goto prompt;
 
 Stopwatch sw = new();
 
 int i = 1;
-int LoadingCounter = 0;
+
+long LowestFPS = 900000;
+long HighestFPS = 0;
+
 Label HelloWorldLabel;
-Label CurrentThreadLabel;
+Label KeyBindingsLabel;
 Label FPSLabel;
 Label KeyPressLabel;
 Label DimensionsLabel;
 Label TimeLabel;
-Textbox TextBox;
+NewTextBox TextBox;
+InputField Input;
+
+bool DirectInput = false;
+
+List<long> FPSList = new(10000);
 
 void OnUpdate(State s)
 {
-	FPSLabel.Text = $"Last frame: {s.LastFrameTime} ms :: {s.FPS} FPS";
-	CurrentThreadLabel.Text = Thread.CurrentThread.Name;
-	KeyPressLabel.ForegroundColor = Sequences.RandomForeground();
+	bool NewMinimum = s.FPS < LowestFPS;
+	bool NewMaximum = s.FPS > HighestFPS;
+
+	if (NewMinimum)
+		LowestFPS = s.FPS;
+	if (NewMaximum)
+		HighestFPS = s.FPS;
+
+	if (FPSList.Count == FPSList.Capacity)
+		FPSList.RemoveAt(0);
+
+	FPSList.Add(s.FPS);
+
+	long AverageFPS = (long) FPSList.Average();
+
+	FPSLabel.Text = $"Last frame : {s.LastFrameTime} ms :: {s.FPS} FPS (Lowest {LowestFPS} Highest {HighestFPS} Average {AverageFPS})";
+	KeyBindingsLabel.Text = "F1: Increment Hello, World Label Counter    F2: Colored Output to Textbox    F3: Reset High/Low FPS trackers    F4: Reset Average FPS tracker    Esc: Exit";
 	TimeLabel.Text = $"{Math.Floor(sw.Elapsed.TotalSeconds)} seconds since application start";
 
 	var dim = Dimensions.Current;
 	DimensionsLabel.Text = $"WW: {dim.WindowWidth} WH: {dim.WindowHeight} BW: {dim.BufferWidth} BH: {dim.BufferHeight}";
 
+
 	if (s.KeyPressed)
 	{
 		KeyPressLabel.Text = $"Last Key: {s.KeyInfo.Key}";
-		
 		char c = s.KeyInfo.KeyChar;
+		bool ValidChar = char.IsPunctuation(c) || char.IsLetterOrDigit(c) || c == ' ';
 		
-		if (char.IsLetterOrDigit(c) || char.IsPunctuation(c) || c == ' ')
+		if (DirectInput && ValidChar)
 			TextBox.Write(c);
 
 		switch (s.KeyInfo.Key)
@@ -42,105 +78,39 @@ void OnUpdate(State s)
 				i++;
 				return;
 
+			case ConsoleKey.F2:
+				TextBox.Write("Hello, World!", ConsoleColor.White, ConsoleColor.Green);
+				break;
+
 			case ConsoleKey.Escape:
 				Engine.SignalExit();
 				break;
 
-			case ConsoleKey.F2:
-				TextBox.Write("Loading... ");
-				break;
-
 			case ConsoleKey.F3:
-				switch (LoadingCounter)
-				{
-					case 0:
-						TextBox.WriteCharInPlace('|');
-						break;
-
-					case 1:
-						TextBox.WriteCharInPlace('/');
-						break;
-
-					case 2:
-						TextBox.WriteCharInPlace('-');
-						break;
-
-					case 3:
-						TextBox.WriteCharInPlace('\\');
-						break;
-				}
-				if (LoadingCounter == 3)
-					LoadingCounter = 0;
-				else
-					LoadingCounter++;
+				LowestFPS = 900000;
+				HighestFPS = 0;
 				break;
 
-			case ConsoleKey.Backspace:
-			case ConsoleKey.UpArrow:
-			case ConsoleKey.DownArrow:
-			case ConsoleKey.LeftArrow:
-			case ConsoleKey.RightArrow:
-			case ConsoleKey.W:
-			case ConsoleKey.S:
-			case ConsoleKey.A:
-			case ConsoleKey.D:
-				HandleTextboxMovement(s.KeyInfo.Key);
+			case ConsoleKey.F4:
+				FPSList.Clear();
+				break;
+
+			case ConsoleKey.F5:
+				DirectInput = !DirectInput;
+
+				Input.DrawCursor = DirectInput == false;
+
+				if (!DirectInput)
+					Engine.FocusedWidget = Input;
+				else
+					Engine.FocusedWidget = null;
+
 				break;
 		}
 	}
 }
 
-void HandleTextboxMovement(ConsoleKey key)
-{
-	switch (key)
-	{
-		case ConsoleKey.Backspace:
-			TextBox.Clear();
-			break;
-		
-		case ConsoleKey.UpArrow:
-			if (TextBox.Y > 0)
-				TextBox.Y -= 1;
-			break;
-
-		case ConsoleKey.DownArrow:
-			if (TextBox.Y + TextBox.Height + 2 < Console.WindowHeight)
-				TextBox.Y += 1;
-			break;
-
-		case ConsoleKey.LeftArrow:
-			if (TextBox.X > 0)
-				TextBox.X -= 1;
-			break;
-
-		case ConsoleKey.RightArrow:
-			if (TextBox.X + TextBox.Width + 2 < Console.WindowWidth)
-				TextBox.X += 1;
-			break;
-
-		//	case ConsoleKey.W:
-		//		if (TextBox.Height > 0)
-		//			TextBox.Height -= 1;
-		//		break;
-		//	
-		//	case ConsoleKey.S:
-		//		if (TextBox.Y + TextBox.Height + 2 < Console.WindowHeight)
-		//			TextBox.Height += 1;
-		//		break;
-		//	
-		//	case ConsoleKey.A:
-		//		if (TextBox.Width > 0)
-		//			TextBox.Width -= 1;
-		//		break;
-		//	
-		//	case ConsoleKey.D:
-		//		if (TextBox.X + TextBox.Width + 2 < Console.WindowWidth)
-		//			TextBox.Width += 1;
-		//		break;
-	}
-}
-
-Engine.Initialize();
+Engine.Initialize(UseKernel32);
 
 FPSLabel = new(0, 0);
 
@@ -151,25 +121,43 @@ KeyPressLabel.Text = "Last Key: ";
 
 HelloWorldLabel = new(0, 3);
 HelloWorldLabel.Text = "Hello, World!";
-HelloWorldLabel.ForegroundColor = Sequences.FgBrightBlue;
+HelloWorldLabel.ForegroundColor = ConsoleColor.Blue;
 
-CurrentThreadLabel = new(0, Console.WindowHeight - 1);
-CurrentThreadLabel.ForegroundColor = Sequences.FgBrightGreen;
+KeyBindingsLabel = new(0, Console.WindowHeight - 1);
+KeyBindingsLabel.ForegroundColor = ConsoleColor.Green;
 
 TimeLabel = new(0, 4);
-TimeLabel.ForegroundColor = Sequences.FgBrightYellow;
+TimeLabel.ForegroundColor = ConsoleColor.Yellow;
 
-TextBox = new(20, 10, 50, 18);
+TextBox = new(10, 10, 80, 25);
 
-Engine.AddWidget(HelloWorldLabel);
+Input = new(10, 37, "> ");
+Input.CursorForeground = ConsoleColor.White;
+Input.CursorBackground = ConsoleColor.Green;
+Input.OnInput += delegate (string TextInput)
+{
+	switch(TextInput.ToUpper())
+	{
+		case "CLEAR":
+			TextBox.Clear();
+			break;
+
+		case "EXIT":
+			Engine.SignalExit();
+			break;
+	}
+};
+
 Engine.AddWidget(FPSLabel);
+Engine.AddWidget(HelloWorldLabel);
 Engine.AddWidget(KeyPressLabel);
-Engine.AddWidget(CurrentThreadLabel);
 Engine.AddWidget(DimensionsLabel);
 Engine.AddWidget(TimeLabel);
+Engine.AddWidget(Input);
 Engine.AddWidget(TextBox);
 
 Engine.OnUpdate = OnUpdate;
+Engine.FocusedWidget = Input;
 
 sw.Start();
 Engine.Run();

@@ -1,7 +1,8 @@
-﻿
+﻿using System.Text;
+
 namespace Konym.AnsiAppEngine;
 
-public class Screen
+public class Screen : IRenderer
 {
 
 	private Stream StandardOutput;
@@ -17,7 +18,7 @@ public class Screen
 	internal Screen()
 	{
 		// Acquire the stdout stream
-		StandardOutput = Console.OpenStandardOutput();
+		StandardOutput = Console.OpenStandardOutput(TotalBytes);
 
 		// Preload the ANSI byte sequences into their respective byte arrays
 		Sequences.Init();
@@ -42,7 +43,7 @@ public class Screen
 	}
 
 
-	internal void Render(List<Widget> Widgets)
+	public void Render(List<Widget> Widgets)
 	{
 		// Reset cursor to 0, 0
 		StandardOutput.Write(Sequences.CursorToTopLeft, 0, Sequences.CursorToTopLeft.Length);
@@ -72,29 +73,33 @@ public class Screen
 		StandardOutput.Write(FinalFrame, 0, FrameDataIndex);
 	}
 
-	public int IX(int X, int Y)
+	private int IX(int X, int Y)
 	{
-		int Index = Y * WindowWidth + X;
+		int Cell = Y * WindowWidth + X;
 
-		if (Index > TotalCells)
-			return 0;
+		if (Cell > TotalCells)
+			return Cell % TotalCells;
 		else
-			return Index;
+			return Cell;
 	}
 
-	public void WriteStringAt(int CellIndex, string Text)
+	public void WriteStringAt(int X, int Y, string Text)
 	{
+		int CellIndex = IX(X, Y);
+
 		for (int i = 0; i < Text.Length; i++)
 			ModifyCharAt(CellIndex + i, Text[i]);
 	}
 
-	public void WriteColorStringAt(int CellIndex, string Text, byte[] Foreground, byte[] Background)
+	public void WriteColorStringAt(int X, int Y, string Text, ConsoleColor Foreground, ConsoleColor Background)
 	{
 		if (Text.Length == 0) { return; }
 
+		int CellIndex = IX(X, Y);
+
 		ModifyCharAt(CellIndex, Text[0]);
-		ModifyForegroundAt(CellIndex, Foreground);
-		ModifyBackgroundAt(CellIndex, Background);
+		ModifyForegroundAt(CellIndex, Sequences.ToFgByteArray(Foreground));
+		ModifyBackgroundAt(CellIndex, Sequences.ToBgByteArray(Background));
 
 		for (int i = 1; i < Text.Length; i++)
 			ModifyCharAt(CellIndex + i, Text[i]);
@@ -104,8 +109,10 @@ public class Screen
 		AddClearAt(ClearIndex);
 	}
 
-	public void WriteBox(int CellIndex, int Width, int Height)
+	public void WriteBox(int X, int Y, int Width, int Height)
 	{
+		int CellIndex = IX(X, Y);
+
 		ModifyCharAt(CellIndex, BoxChars.TopLeft);
 		ModifyCharAt(CellIndex + Width - 1, BoxChars.TopRight);
 		ModifyCharAt(CellIndex + (WindowWidth * (Height - 1)), BoxChars.BottomLeft);
@@ -151,6 +158,7 @@ public class Screen
 			ScreenBuffer[BufferIndex + i] = Sequences.Clear[i];
 	}
 
+
 	private void ModifyCharAt(int CellIndex, char Character)
 	{
 		int BufferIndex = CellIndex * 14 + 10;
@@ -165,20 +173,33 @@ public class Screen
 		ScreenBuffer[BufferIndex] = (byte) Character;
 	}
 
-	public void CopyToBuffer2D(int CellIndex, int LineWidth, byte[] ToCopy)
+	public void AddColorsAt(int X, int Y, ConsoleColor Foreground, ConsoleColor Background)
 	{
+		int CellIndex = IX(X, Y);
+
+		ModifyForegroundAt(CellIndex, Sequences.ToFgByteArray(Foreground));
+		ModifyBackgroundAt(CellIndex, Sequences.ToBgByteArray(Background));
+		AddClearAt(CellIndex);
+	}
+
+	public void CopyToBuffer2D(int X, int Y, int LineWidth, CharacterInfo[] ToCopy)
+	{
+		int CellIndex = IX(X, Y);
 		int StartIndex = CellIndex * 14;
 		int WindowWidthBytes = WindowWidth * 14;
+		int LineWidthBytes = LineWidth * 14;
+
+		//byte[] Buffer = ToCopy as byte[];
 
 		int CurrentWidth = 0;
 		int CurrentLine = 0;
 
 		for (int i = 0; i < ToCopy.Length; i++)
 		{
-			ScreenBuffer[StartIndex + (WindowWidthBytes * CurrentLine) + CurrentWidth] = ToCopy[i];
+			//ScreenBuffer[StartIndex + (WindowWidthBytes * CurrentLine) + CurrentWidth] = Buffer[i];
 			CurrentWidth++;
 
-			if (CurrentWidth == LineWidth * 14)
+			if (CurrentWidth == LineWidthBytes)
 			{
 				CurrentWidth = 0;
 				CurrentLine++;

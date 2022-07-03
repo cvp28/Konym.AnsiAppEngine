@@ -19,10 +19,23 @@ public class Textbox : Widget
 	private int TotalBytes;
 	private int TotalCells;
 
-	public Textbox(int X, int Y, int Width, int Height)
+	private bool DrawCursor;
+
+	public Textbox(int X, int Y, int Width, int Height) : base()
 	{
+
 		this.X = X;
 		this.Y = Y;
+
+		DrawCursor = true;
+		Task.Run(() =>
+		{
+			while (true)
+			{
+				Thread.Sleep(250);
+				DrawCursor = !DrawCursor;
+			}
+		}); ;
 
 		CursorX = 0;
 		CursorY = 0;
@@ -43,7 +56,7 @@ public class Textbox : Widget
 		Clear();
 	}
 
-	public override void Draw(Screen s)
+	public override void Draw(IRenderer s)
 	{
 		//	int CursorCellPos = IX(CursorX, CursorY);
 		//	
@@ -52,10 +65,14 @@ public class Textbox : Widget
 		//	AddClearAt(CursorCellPos);
 
 		// Draw window frame
-		s.WriteBox(s.IX(X, Y), Width + 2, Height + 2);
+		s.WriteBox(X, Y, Width + 2, Height + 2);
 
 		// Copy textbox buffer to screen
-		s.CopyToBuffer2D(s.IX(X + 1, Y + 1), Width, Buffer);
+		//s.CopyToBuffer2D(X + 1, Y + 1, Width, Buffer);
+
+		// Draw cursor
+		if (DrawCursor)
+			s.AddColorsAt(X + CursorX + 1, Y + CursorY + 1, ConsoleColor.Black, ConsoleColor.White);
 	}
 
 	public override void OnConsoleKey(ConsoleKeyInfo cki)
@@ -69,14 +86,15 @@ public class Textbox : Widget
 		CursorX = 0;
 		CursorY = 0;
 	}
+
 	private void AdvanceCursor()
 	{
-		if (CursorX + 1 == Width)
+		if (ReachedWidthLimit())
 		{
-			if (CursorY + 1 != Height)
-				CursorY++;
-			else
+			if (ReachedHeightLimit())
 				ScrollDown();
+			else
+				CursorY++;
 
 			CursorX = 0;
 		}
@@ -93,11 +111,33 @@ public class Textbox : Widget
 		AdvanceCursor();
 	}
 
+	private void WriteCharInternal(char Character, byte[] Foreground, byte[] Background, bool Clear)
+	{
+		ModifyChar(Character, Foreground, Background, Clear);
+		AdvanceCursor();
+	}
+
 	// Does the calculation to write the specified character at the exact cursor position
 	private void ModifyChar(char Character)
 	{
 		int BufferIndex = ((CursorY * Width + CursorX) * 14) + 10;
 		Buffer[BufferIndex] = (byte) Character;
+	}
+
+	private void ModifyChar(char Character, byte[] Foreground, byte[] Background, bool Clear)
+	{
+		ModifyChar(Character);
+		ModifyForeground(Foreground);
+		ModifyBackground(Background);
+
+		if (Clear)
+			AddClear();
+	}
+
+	public void WriteLine(string Text, byte[] Foreground, byte[] Background)
+	{
+		Write(Text, Foreground, Background);
+		NextLine();
 	}
 
 	// User API to write text in buffer at current cursor position AND move to next line automatically
@@ -109,8 +149,28 @@ public class Textbox : Widget
 
 	public void WriteLine(char Character)
 	{
-		WriteCharInternal(Character);
+		Write(Character);
 		NextLine();
+	}
+
+	public void Write(string Text, byte[] Foreground, byte[] Background)
+	{
+		for (int i = 0; i < Text.Length; i++)
+		{
+			bool AddClear = ReachedWidthLimit() || i == Text.Length - 1;
+
+			Write(Text[i], Foreground, Background, AddClear);
+
+			//	if (ReachedWidthLimit() || i == Text.Length - 1)
+			//		AddClear();
+			//	
+			//	if (i == 0 || CursorX == 0)
+			//		Write(Text[i], Foreground, Background, false);
+			//	else
+			//		Write(Text[i]);
+		}
+
+		//AddClear();
 	}
 
 	// User API to write text in buffer at current cursor position
@@ -118,6 +178,11 @@ public class Textbox : Widget
 	{
 		foreach (char c in Text)
 			Write(c);
+	}
+
+	public void Write(char Character, byte[] Foreground, byte[] Background, bool Clear)
+	{
+		WriteCharInternal(Character, Foreground, Background, Clear);
 	}
 
 	public void Write(char Character)
@@ -133,30 +198,28 @@ public class Textbox : Widget
 	// User API to manually advance to next line
 	public void NextLine()
 	{
-		if (CursorY + 1 == Height)
-		{
+		if (ReachedHeightLimit())
 			ScrollDown();
-			CursorX = 0;
-		}
 		else
-		{
 			CursorY++;
-			CursorX = 0;
-		}
+
+		CursorX = 0;
 	}
+
+	private bool ReachedWidthLimit() => CursorX == Width - 1;
+
+	private bool ReachedHeightLimit() => CursorY == Height - 1;
 
 	public void ScrollDown()
 	{
-		// Shift entire buffer up by one line
-		Array.Copy(Buffer, Width * 14, Buffer, 0, Buffer.Length - (Width * 14));
-
 		int LineWidthBytes = Width * 14;
+
+		// Shift entire buffer up by one line
+		Array.Copy(Buffer, LineWidthBytes, Buffer, 0, Buffer.Length - LineWidthBytes);
 
 		// Clear last line
 		for (int i = LineWidthBytes * (Height - 1); i < TotalBytes; i++)
-		{
 			Buffer[i] = ClearBuffer[i];
-		}
 
 	}
 
@@ -170,25 +233,40 @@ public class Textbox : Widget
 			return Index;
 	}
 
-	private void ModifyForegroundAt(int CellIndex, byte[] ColorSequence)
+	private void ModifyForeground(byte[] ColorSequence)
 	{
-		int BufferIndex = CellIndex * 14;
+		int BufferIndex = (CursorY * Width + CursorX) * 14;
 
 		for (int i = 0; i < ColorSequence.Length; i++)
 			Buffer[BufferIndex + i] = ColorSequence[i];
 	}
 
-	private void ModifyBackgroundAt(int CellIndex, byte[] ColorSequence)
+	private void ModifyBackground(byte[] ColorSequence)
 	{
-		int BufferIndex = CellIndex * 14 + 5;
+		int BufferIndex = ((CursorY * Width + CursorX) * 14) + 5;
 
 		for (int i = 0; i < ColorSequence.Length; i++)
 			Buffer[BufferIndex + i] = ColorSequence[i];
 	}
 
-	private void AddClearAt(int CellIndex)
+	private void GetColorDataAtCursor(out byte[] Foreground, out byte[] Background)
 	{
-		int BufferIndex = CellIndex * 14 + 11;
+		Foreground = new byte[5];
+		Background = new byte[5];
+
+		int CellForegroundBufferIndex = (CursorY * Width + CursorX) * 14;
+		int CellBackgroundBufferIndex = (CursorY * Width + CursorX) * 14 + 5;
+
+		for (int i = 0; i < 5; i++)
+		{
+			Foreground[i] = Buffer[CellForegroundBufferIndex + i];
+			Background[i] = Buffer[CellBackgroundBufferIndex + i];
+		}
+	}
+
+	private void AddClear()
+	{
+		int BufferIndex = ((CursorY * Width + CursorX) * 14) + 11;
 
 		for (int i = 0; i < 3; i++)
 			Buffer[BufferIndex + i] = Sequences.Clear[i];

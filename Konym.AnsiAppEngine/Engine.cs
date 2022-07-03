@@ -10,18 +10,20 @@ public static class Engine
 	private static bool AppActive;
 	private static bool RenderActive;
 
-	public static Screen Screen;
+	public static IRenderer Screen;
 	private static Stopwatch RenderTimer;
 	private static long FPS;
 	private static long FrameTime;
 
 	private static Dimensions LastDimensions;
 
+	public static Widget FocusedWidget { get; set; } = null;
 	private static List<Widget> Widgets;
 
 	public static Action<State> OnUpdate { get; set; } = null;
 
-	public static void Initialize()
+
+	public static void Initialize(bool UseKernel32API)
 	{
 		ApplicationThread = new(ApplicationLoop);
 		ApplicationThread.IsBackground = true;
@@ -35,7 +37,10 @@ public static class Engine
 
 		LastDimensions = Dimensions.Current;
 
-		Screen = new();
+		if (UseKernel32API)
+			Screen = new NativeScreen();
+		else
+			Screen = new Screen();
 
 		Widgets = new();
 
@@ -78,6 +83,16 @@ public static class Engine
 				var cki = Console.ReadKey(true);
 				s.KeyPressed = true;
 				s.KeyInfo = cki;
+
+				if (FocusedWidget is not null)
+				{
+					FocusedWidget.OnConsoleKey(cki);
+					s.InputAlreadyHandled = true;
+				}
+				else
+				{
+					s.InputAlreadyHandled = false;
+				}
 			}
 			else
 			{
@@ -130,13 +145,19 @@ public static class Engine
 		RenderActive = false;
 	}
 
-	public static void AddWidget(Widget w)
+	public static void AddWidget(Widget Widget)
 	{
-		Widgets.Add(w);
+		Widgets.Add(Widget);
 	}
 
-	public static bool RemoveWidget(Widget w)
+	public static void AddWidgets(params Widget[] Widgets)
 	{
-		return Widgets.Remove(w);
+		foreach (Widget Widget in Widgets)
+			AddWidget(Widget);
+	}
+
+	public static bool RemoveWidget(Widget Widget)
+	{
+		return Widgets.Remove(Widget);
 	}
 }
